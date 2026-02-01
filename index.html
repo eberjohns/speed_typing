@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpeedType - Cyberpunk Typing Arena</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle at center, #0d0d0d 0%, #050505 100%);
+            color: #f8fafc;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+        .logo-font {
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 0.15em;
+        }
+        .glass-panel {
+            background: rgba(13, 13, 13, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+        .caret {
+            animation: breathe 1.5s ease-in-out infinite;
+        }
+        @keyframes breathe {
+            0%, 100% { 
+                opacity: 1; 
+                box-shadow: 0 0 20px #22d3ee, 0 0 40px #22d3ee;
+            }
+            50% { 
+                opacity: 0.4; 
+                box-shadow: 0 0 10px #22d3ee, 0 0 20px #22d3ee;
+            }
+        }
+        .ghost-caret {
+            opacity: 0.3;
+            animation: ghost-pulse 2s ease-in-out infinite;
+        }
+        @keyframes ghost-pulse {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 0.4; }
+        }
+        .word-blur {
+            filter: blur(3px);
+            opacity: 0.3;
+        }
+        .char-correct {
+            color: #f8fafc;
+            transition: color 300ms ease-in-out;
+        }
+        .char-incorrect {
+            color: #ef4444;
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+            transition: all 300ms ease-in-out;
+        }
+        .char-extra {
+            color: #ef4444;
+            opacity: 0.7;
+            transition: all 300ms ease-in-out;
+        }
+        .char-untyped {
+            color: #4b5563;
+            opacity: 0.5;
+            transition: all 300ms ease-in-out;
+        }
+        .pulse-bg {
+            animation: pulse-glow 0.5s ease-out;
+        }
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 0px rgba(34, 211, 238, 0); }
+            50% { box-shadow: 0 0 60px rgba(34, 211, 238, 0.4); }
+            100% { box-shadow: 0 0 0px rgba(34, 211, 238, 0); }
+        }
+        .gist-badge {
+            background: linear-gradient(135deg, rgba(250, 204, 21, 0.1), rgba(34, 211, 238, 0.1));
+            border: 1px solid rgba(250, 204, 21, 0.3);
+        }
+        .neon-glow-yellow {
+            text-shadow: 0 0 10px rgba(250, 204, 21, 0.8), 0 0 20px rgba(250, 204, 21, 0.4);
+        }
+        .neon-glow-cyan {
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.8), 0 0 20px rgba(34, 211, 238, 0.4);
+        }
+        input:focus {
+            outline: none;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #22d3ee 0%, #facc15 100%);
+            box-shadow: 0 0 20px rgba(34, 211, 238, 0.5);
+        }
+        .chart-gradient {
+            fill: url(#chartGradient);
+        }
+        .stat-card {
+            background: rgba(13, 13, 13, 0.8);
+            border: 1px solid rgba(250, 204, 21, 0.2);
+            transition: all 300ms ease-in-out;
+        }
+        .stat-card:hover {
+            border-color: rgba(250, 204, 21, 0.5);
+            box-shadow: 0 0 20px rgba(250, 204, 21, 0.2);
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+        }
+        .float-anim {
+            animation: float 3s ease-in-out infinite;
+        }
+        .word-container {
+            max-height: 160px;
+            overflow: hidden;
+            position: relative;
+        }
+        .slider {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            background: #4b5563;
+            border-radius: 2px;
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #facc15;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #facc15;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // Mulberry32 PRNG
+        function mulberry32(seed) {
+            return function() {
+                let t = seed += 0x6D2B79F5;
+                t = Math.imul(t ^ t >>> 15, t | 1);
+                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+        }
+
+        // Fisher-Yates shuffle with PRNG
+        function seededShuffle(array, seed) {
+            const rng = mulberry32(seed);
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(rng() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        // English 200 word list
+        const ENGLISH_200 = [
+            "the", "of", "and", "to", "a", "in", "is", "it", "you", "that",
+            "he", "was", "for", "on", "are", "with", "as", "I", "his", "they",
+            "be", "at", "one", "have", "this", "from", "or", "had", "by", "not",
+            "word", "but", "what", "some", "we", "can", "out", "other", "were", "all",
+            "there", "when", "up", "use", "your", "how", "said", "an", "each", "she",
+            "which", "do", "their", "time", "if", "will", "way", "about", "many", "then",
+            "them", "write", "would", "like", "so", "these", "her", "long", "make", "thing",
+            "see", "him", "two", "has", "look", "more", "day", "could", "go", "come",
+            "did", "number", "sound", "no", "most", "people", "my", "over", "know", "water",
+            "than", "call", "first", "who", "may", "down", "side", "been", "now", "find",
+            "any", "new", "work", "part", "take", "get", "place", "made", "live", "where",
+            "after", "back", "little", "only", "round", "man", "year", "came", "show", "every",
+            "good", "me", "give", "our", "under", "name", "very", "through", "just", "form",
+            "sentence", "great", "think", "say", "help", "low", "line", "differ", "turn", "cause",
+            "much", "mean", "before", "move", "right", "boy", "old", "too", "same", "tell",
+            "does", "set", "three", "want", "air", "well", "also", "play", "small", "end",
+            "put", "home", "read", "hand", "port", "large", "spell", "add", "even", "land",
+            "here", "must", "big", "high", "such", "follow", "act", "why", "ask", "men",
+            "change", "went", "light", "kind", "off", "need", "house", "picture", "try", "us",
+            "again", "animal", "point", "mother", "world", "near", "build", "self", "earth", "father"
+        ];
+
+        function addPunctuation(words, seed) {
+            const rng = mulberry32(seed);
+            const result = [];
+            let capitalizeNext = true;
+            
+            for (let i = 0; i < words.length; i++) {
+                let word = words[i];
+                
+                // Capitalize if needed
+                if (capitalizeNext) {
+                    word = word.charAt(0).toUpperCase() + word.slice(1);
+                    capitalizeNext = false;
+                }
+                
+                const rand = rng();
+                
+                // Add punctuation
+                if (rand < 0.05 && i > 0) {
+                    word = word + '.';
+                    capitalizeNext = true;
+                } else if (rand < 0.08 && i > 0) {
+                    word = word + ',';
+                } else if (rand < 0.09 && i > 0) {
+                    word = word + ';';
+                    capitalizeNext = true;
+                } else if (rand < 0.095 && i > 0) {
+                    word = word + ':';
+                } else if (rand < 0.098 && i > 0) {
+                    word = word + '!';
+                    capitalizeNext = true;
+                } else if (rand < 0.099 && i > 0) {
+                    word = word + '?';
+                    capitalizeNext = true;
+                }
+                
+                result.push(word);
+            }
+            
+            return result;
+        }
+
+        // Keyboard click sound generator
+        const createClickSound = () => {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.05);
+        };
+
+        function TypingTest() {
+            const [params, setParams] = useState({});
+            const [content, setContent] = useState([]);
+            const [gistName, setGistName] = useState('');
+            const [started, setStarted] = useState(false);
+            const [finished, setFinished] = useState(false);
+            const [focused, setFocused] = useState(false);
+            const [currentWordIndex, setCurrentWordIndex] = useState(0);
+            const [input, setInput] = useState('');
+            const [typedWords, setTypedWords] = useState([]);
+            const [startTime, setStartTime] = useState(null);
+            const [timeLeft, setTimeLeft] = useState(null);
+            const [wpmHistory, setWpmHistory] = useState([]);
+            const [combo, setCombo] = useState(0);
+            const [soundEnabled, setSoundEnabled] = useState(false);
+            const [showPulse, setShowPulse] = useState(false);
+            const [ghostEnabled, setGhostEnabled] = useState(true);
+            const [ghostSpeed, setGhostSpeed] = useState(80);
+            
+            // Practice mode settings
+            const [mode, setMode] = useState('time');
+            const [timeValue, setTimeValue] = useState(30);
+            const [wordValue, setWordValue] = useState(50);
+            const [punctuationEnabled, setPunctuationEnabled] = useState(false);
+            const [showManual, setShowManual] = useState(false);
+            
+            const inputRef = useRef(null);
+            const containerRef = useRef(null);
+            const wordRefs = useRef([]);
+
+            // Parse URL params
+            useEffect(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const isTest = urlParams.get('test') === 'true';
+                
+                // Generate random seed if not provided
+                const seed = urlParams.get('seed') || Math.random().toString(36).substring(2, 15);
+                
+                const p = {
+                    gist: urlParams.get('gist'),
+                    seed: seed,
+                    time: urlParams.get('time') ? parseInt(urlParams.get('time')) : null,
+                    words: urlParams.get('words') ? parseInt(urlParams.get('words')) : null,
+                    punctuation: urlParams.get('punctuation') === 'true',
+                    test: isTest
+                };
+                
+                // Determine mode based on URL params
+                if (p.words) {
+                    p.mode = 'words';
+                    setMode('words');
+                    setWordValue(p.words);
+                } else {
+                    p.mode = 'time';
+                    p.time = p.time || 30;
+                    setMode('time');
+                    setTimeValue(p.time);
+                }
+                
+                setPunctuationEnabled(p.punctuation);
+                setParams(p);
+                setTimeLeft(p.time);
+            }, []);
+
+            // Load content
+            useEffect(() => {
+                if (!params.seed) return;
+
+                if (params.gist) {
+                    fetch(params.gist)
+                        .then(res => res.text())
+                        .then(text => {
+                            const words = text.split(/\s+/).filter(w => w.length > 0);
+                            setContent(words);
+                            const urlParts = params.gist.split('/');
+                            setGistName(urlParts[urlParts.length - 1] || 'gist.txt');
+                        })
+                        .catch(() => {
+                            loadSeedWords();
+                        });
+                } else {
+                    loadSeedWords();
+                }
+            }, [params]);
+
+            const loadSeedWords = () => {
+                const seedNum = parseInt(params.seed) || params.seed.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+                let words = seededShuffle(ENGLISH_200, seedNum);
+                
+                // Create enough words (cycle through if needed)
+                const targetCount = 500; // Generate more words for cycling
+                const cycledWords = [];
+                while (cycledWords.length < targetCount) {
+                    cycledWords.push(...words);
+                }
+                
+                if (params.punctuation || punctuationEnabled) {
+                    words = addPunctuation(cycledWords.slice(0, targetCount), seedNum + 1);
+                } else {
+                    words = cycledWords.slice(0, targetCount);
+                }
+                
+                setContent(words);
+            };
+
+            // Timer
+            useEffect(() => {
+                if (!started || finished || params.mode !== 'time') return;
+
+                const interval = setInterval(() => {
+                    setTimeLeft(prev => {
+                        if (prev <= 1) {
+                            endTest();
+                            return 0;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+
+                return () => clearInterval(interval);
+            }, [started, finished]);
+
+            // WPM tracking
+            useEffect(() => {
+                if (!started || finished) return;
+
+                const interval = setInterval(() => {
+                    const wpm = calculateWPM();
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    setWpmHistory(prev => [...prev, { time: elapsed, wpm }]);
+                }, 1000);
+
+                return () => clearInterval(interval);
+            }, [started, finished, typedWords, startTime]);
+
+            const calculateWPM = () => {
+                if (!startTime) return 0;
+                const timeElapsed = (Date.now() - startTime) / 1000 / 60;
+                const correctChars = typedWords.reduce((acc, word) => {
+                    return acc + word.chars.filter(c => c.correct && !c.extra).length;
+                }, 0);
+                return Math.round((correctChars / 5) / timeElapsed) || 0;
+            };
+
+            const calculateAccuracy = () => {
+                const totalChars = typedWords.reduce((acc, word) => acc + word.chars.length, 0);
+                if (totalChars === 0) return 100;
+                const correctChars = typedWords.reduce((acc, word) => {
+                    return acc + word.chars.filter(c => c.correct && !c.extra).length;
+                }, 0);
+                return Math.round((correctChars / totalChars) * 100);
+            };
+
+            // Ghost runner position
+            const ghostWordIndex = useMemo(() => {
+                if (!started || !startTime || !ghostEnabled) return -1;
+                const elapsed = (Date.now() - startTime) / 1000 / 60;
+                const charsTyped = ghostSpeed * 5 * elapsed;
+                
+                let charCount = 0;
+                for (let i = 0; i < content.length; i++) {
+                    charCount += content[i].length + 1;
+                    if (charCount >= charsTyped) {
+                        return i;
+                    }
+                }
+                return content.length - 1;
+            }, [started, startTime, ghostEnabled, ghostSpeed, typedWords]);
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    return;
+                }
+
+                if (soundEnabled && e.key.length === 1) {
+                    createClickSound();
+                }
+
+                if (!started && e.key.length === 1) {
+                    setStarted(true);
+                    setStartTime(Date.now());
+                }
+
+                if (e.ctrlKey && e.key === 'Backspace') {
+                    e.preventDefault();
+                    setInput('');
+                    return;
+                }
+            };
+
+            const handleInput = (e) => {
+                const value = e.target.value;
+                
+                // Prevent space at the beginning
+                if (value === ' ') return;
+                
+                setInput(value);
+
+                const currentWord = content[currentWordIndex];
+                if (!currentWord) return;
+
+                // Check for space (word completion)
+                if (value.endsWith(' ')) {
+                    const typedWord = value.trim();
+                    const chars = [];
+                    
+                    // Compare each character
+                    for (let i = 0; i < Math.max(typedWord.length, currentWord.length); i++) {
+                        if (i < typedWord.length && i < currentWord.length) {
+                            chars.push({
+                                char: typedWord[i],
+                                correct: typedWord[i] === currentWord[i],
+                                extra: false
+                            });
+                        } else if (i >= currentWord.length) {
+                            chars.push({
+                                char: typedWord[i],
+                                correct: false,
+                                extra: true
+                            });
+                        }
+                    }
+                    
+                    const isCorrect = typedWord === currentWord;
+                    setTypedWords(prev => [...prev, { word: typedWord, expected: currentWord, chars, correct: isCorrect }]);
+                    
+                    if (isCorrect) {
+                        const newCombo = combo + 1;
+                        setCombo(newCombo);
+                        if (newCombo % 10 === 0) {
+                            setShowPulse(true);
+                            setTimeout(() => setShowPulse(false), 500);
+                        }
+                    } else {
+                        setCombo(0);
+                    }
+                    
+                    setInput('');
+                    setCurrentWordIndex(prev => prev + 1);
+                    
+                    // Check if word mode completion
+                    if (params.mode === 'words' && currentWordIndex + 1 >= params.words) {
+                        endTest();
+                    }
+                }
+            };
+
+            const endTest = () => {
+                setFinished(true);
+            };
+
+            const restart = () => {
+                setStarted(false);
+                setFinished(false);
+                setFocused(false);
+                setCurrentWordIndex(0);
+                setInput('');
+                setTypedWords([]);
+                setStartTime(null);
+                setTimeLeft(params.time || timeValue);
+                setWpmHistory([]);
+                setCombo(0);
+                setShowPulse(false);
+            };
+
+            const handleFocus = () => {
+                setFocused(true);
+                inputRef.current?.focus();
+            };
+
+            const startTest = () => {
+                // Update params based on practice settings
+                const newParams = {
+                    ...params,
+                    mode: mode,
+                    time: mode === 'time' ? timeValue : null,
+                    words: mode === 'words' ? wordValue : null,
+                    punctuation: punctuationEnabled,
+                    test: true // Mark as started
+                };
+                setParams(newParams);
+                setTimeLeft(mode === 'time' ? timeValue : null);
+                
+                // Reload content with new settings
+                loadSeedWords();
+            };
+
+            const rawWPM = useMemo(() => {
+                if (!startTime || !finished) return 0;
+                const timeElapsed = (Date.now() - startTime) / 1000 / 60;
+                const totalChars = typedWords.reduce((acc, word) => acc + word.chars.length, 0);
+                return Math.round((totalChars / 5) / timeElapsed) || 0;
+            }, [finished, typedWords, startTime]);
+
+            const finalWPM = useMemo(() => {
+                if (!startTime || !finished) return 0;
+                const timeElapsed = (Date.now() - startTime) / 1000 / 60;
+                const correctChars = typedWords.reduce((acc, word) => {
+                    return acc + word.chars.filter(c => c.correct && !c.extra).length;
+                }, 0);
+                return Math.round((correctChars / 5) / timeElapsed) || 0;
+            }, [finished, typedWords, startTime]);
+
+            const consistency = useMemo(() => {
+                if (wpmHistory.length < 2) return 100;
+                const wpms = wpmHistory.map(h => h.wpm);
+                const avg = wpms.reduce((a, b) => a + b, 0) / wpms.length;
+                const variance = wpms.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / wpms.length;
+                const stdDev = Math.sqrt(variance);
+                return Math.max(0, Math.round(100 - (stdDev / avg) * 100));
+            }, [wpmHistory]);
+
+            const progressPercent = useMemo(() => {
+                if (params.mode === 'time' && params.time) {
+                    return ((params.time - timeLeft) / params.time) * 100;
+                } else if (params.mode === 'words' && params.words) {
+                    return (currentWordIndex / params.words) * 100;
+                }
+                return 0;
+            }, [timeLeft, currentWordIndex, params]);
+
+            const stats = useMemo(() => {
+                const correct = typedWords.reduce((acc, word) => {
+                    return acc + word.chars.filter(c => c.correct && !c.extra).length;
+                }, 0);
+                const incorrect = typedWords.reduce((acc, word) => {
+                    return acc + word.chars.filter(c => !c.correct && !c.extra).length;
+                }, 0);
+                const extra = typedWords.reduce((acc, word) => {
+                    return acc + word.chars.filter(c => c.extra).length;
+                }, 0);
+                
+                const correctWords = typedWords.filter(w => w.correct).length;
+                const incorrectWords = typedWords.filter(w => !w.correct).length;
+                
+                return { correct, incorrect, extra, correctWords, incorrectWords };
+            }, [typedWords]);
+
+            // Scroll to keep current word visible
+            useEffect(() => {
+                if (currentWordIndex > 0 && wordRefs.current[currentWordIndex]) {
+                    const wordElement = wordRefs.current[currentWordIndex];
+                    const container = containerRef.current;
+                    if (wordElement && container) {
+                        const wordTop = wordElement.offsetTop;
+                        const containerHeight = container.clientHeight;
+                        if (wordTop > containerHeight / 2) {
+                            container.scrollTop = wordTop - containerHeight / 2;
+                        }
+                    }
+                }
+            }, [currentWordIndex]);
+
+            if (content.length === 0) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-2xl text-[#4b5563] neon-glow-cyan">Initializing Arena...</div>
+                    </div>
+                );
+            }
+
+            // Practice mode setup screen
+            if (!params.test && !started) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                        <div className="max-w-2xl w-full">
+                            <h1 className="logo-font text-5xl text-[#facc15] neon-glow-yellow text-center mb-4">SPEEDTYPE</h1>
+                            <div className="text-center text-[#4b5563] mb-12">Organizer Control Panel</div>
+                            
+                            <div className="glass-panel p-8 mb-6">
+                                <div className="mb-6">
+                                    <label className="text-[#facc15] mb-2 block">Mode</label>
+                                    <div className="flex gap-4">
+                                        <button
+                                            onClick={() => setMode('time')}
+                                            className={`flex-1 py-3 rounded-lg transition-all ${
+                                                mode === 'time' 
+                                                    ? 'bg-[#facc15] text-[#050505]' 
+                                                    : 'bg-[#0d0d0d] text-[#4b5563] hover:text-[#facc15]'
+                                            }`}
+                                        >
+                                            Time Mode
+                                        </button>
+                                        <button
+                                            onClick={() => setMode('words')}
+                                            className={`flex-1 py-3 rounded-lg transition-all ${
+                                                mode === 'words' 
+                                                    ? 'bg-[#facc15] text-[#050505]' 
+                                                    : 'bg-[#0d0d0d] text-[#4b5563] hover:text-[#facc15]'
+                                            }`}
+                                        >
+                                            Word Mode
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {mode === 'time' ? (
+                                    <div className="mb-6">
+                                        <label className="text-[#22d3ee] mb-2 block">Duration: {timeValue}s</label>
+                                        <div className="flex gap-3">
+                                            {[15, 30, 60, 120].map(t => (
+                                                <button
+                                                    key={t}
+                                                    onClick={() => setTimeValue(t)}
+                                                    className={`px-4 py-2 rounded-lg transition-all ${
+                                                        timeValue === t 
+                                                            ? 'bg-[#22d3ee] text-[#050505]' 
+                                                            : 'bg-[#0d0d0d] text-[#4b5563]'
+                                                    }`}
+                                                >
+                                                    {t}s
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mb-6">
+                                        <label className="text-[#22d3ee] mb-2 block">Word Count: {wordValue}</label>
+                                        <div className="flex gap-3">
+                                            {[10, 25, 50, 100].map(w => (
+                                                <button
+                                                    key={w}
+                                                    onClick={() => setWordValue(w)}
+                                                    className={`px-4 py-2 rounded-lg transition-all ${
+                                                        wordValue === w 
+                                                            ? 'bg-[#22d3ee] text-[#050505]' 
+                                                            : 'bg-[#0d0d0d] text-[#4b5563]'
+                                                    }`}
+                                                >
+                                                    {w}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="mb-6">
+                                    <button
+                                        onClick={() => setPunctuationEnabled(!punctuationEnabled)}
+                                        className="flex items-center gap-3"
+                                    >
+                                        <div className={`w-12 h-6 rounded-full transition-all ${
+                                            punctuationEnabled ? 'bg-[#facc15]' : 'bg-[#4b5563]'
+                                        }`}>
+                                            <div className={`w-5 h-5 bg-white rounded-full transition-all m-0.5 ${
+                                                punctuationEnabled ? 'translate-x-6' : ''
+                                            }`}></div>
+                                        </div>
+                                        <span className="text-[#f8fafc]">Punctuation</span>
+                                    </button>
+                                </div>
+
+                                <button
+                                    onClick={startTest}
+                                    className="w-full py-4 bg-[#facc15] text-[#050505] rounded-lg font-bold text-lg hover:bg-[#22d3ee] transition-all"
+                                    style={{boxShadow: '0 0 20px rgba(250, 204, 21, 0.5)'}}
+                                >
+                                    Start Test
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => setShowManual(!showManual)}
+                                className="text-[#22d3ee] text-sm w-full text-center mb-4"
+                            >
+                                {showManual ? '▼' : '▶'} URL Parameter Manual
+                            </button>
+
+                            {showManual && (
+                                <div className="glass-panel p-6 text-sm">
+                                    <h3 className="text-[#facc15] mb-3">URL Parameters Guide</h3>
+                                    <div className="space-y-2 text-[#4b5563]">
+                                        <p><span className="text-[#22d3ee]">?test=true</span> - Enable test mode (hides organizer controls)</p>
+                                        <p><span className="text-[#22d3ee]">?time=60</span> - Set time duration (e.g., 60 seconds)</p>
+                                        <p><span className="text-[#22d3ee]">?words=100</span> - Set word count (e.g., 100 words)</p>
+                                        <p><span className="text-[#22d3ee]">?punctuation=true</span> - Enable punctuation</p>
+                                        <p><span className="text-[#22d3ee]">?seed=12345</span> - Set random seed (optional, auto-generated)</p>
+                                        <p><span className="text-[#22d3ee]">?gist=URL</span> - Load custom text from GitHub Gist</p>
+                                        <p className="mt-4 text-[#facc15]">Example: ?test=true&time=60&punctuation=true</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            if (finished) {
+                const testInfo = {
+                    mode: params.mode,
+                    value: params.mode === 'time' ? `${params.time}s` : `${params.words} words`,
+                    punctuation: params.punctuation ? 'ON' : 'OFF',
+                    seed: params.seed
+                };
+
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                        <div className="max-w-5xl w-full">
+                            {/* Header */}
+                            <div className="text-center mb-8">
+                                <h1 className="logo-font text-4xl text-[#facc15] neon-glow-yellow mb-2">SPEEDTYPE</h1>
+                                <div className="text-[#22d3ee] text-sm">Performance Report</div>
+                            </div>
+
+                            {/* Test Info */}
+                            <div className="glass-panel p-4 mb-6 flex justify-center gap-8 text-sm">
+                                <div><span className="text-[#4b5563]">Mode:</span> <span className="text-[#facc15]">{testInfo.mode}</span></div>
+                                <div><span className="text-[#4b5563]">Duration:</span> <span className="text-[#22d3ee]">{testInfo.value}</span></div>
+                                <div><span className="text-[#4b5563]">Punctuation:</span> <span className="text-[#f8fafc]">{testInfo.punctuation}</span></div>
+                                <div><span className="text-[#4b5563]">Seed:</span> <span className="text-[#4b5563]">{testInfo.seed.substring(0, 8)}</span></div>
+                            </div>
+
+                            {/* Main Stats */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                                <div className="glass-panel p-8 text-center">
+                                    <div className="text-8xl font-bold text-[#facc15] neon-glow-yellow mb-3">{finalWPM}</div>
+                                    <div className="text-2xl text-[#22d3ee]">WPM</div>
+                                    <div className="text-sm text-[#4b5563] mt-2">Words Per Minute</div>
+                                </div>
+                                <div className="glass-panel p-8 text-center">
+                                    <div className="text-8xl font-bold text-[#22d3ee] neon-glow-cyan mb-3">{calculateAccuracy()}%</div>
+                                    <div className="text-2xl text-[#facc15]">Accuracy</div>
+                                    <div className="text-sm text-[#4b5563] mt-2">Precision Rate</div>
+                                </div>
+                            </div>
+
+                            {/* WPM Chart */}
+                            <div className="glass-panel p-6 mb-8">
+                                <div className="text-sm text-[#4b5563] mb-4 text-center">Performance Graph</div>
+                                <svg width="100%" height="250" viewBox="0 0 800 250" preserveAspectRatio="none">
+                                    <defs>
+                                        <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                            <stop offset="0%" style={{stopColor: '#22d3ee', stopOpacity: 0.6}} />
+                                            <stop offset="100%" style={{stopColor: '#22d3ee', stopOpacity: 0}} />
+                                        </linearGradient>
+                                    </defs>
+                                    {wpmHistory.length > 1 && (
+                                        <>
+                                            {/* Gradient fill */}
+                                            <polygon
+                                                className="chart-gradient"
+                                                points={
+                                                    wpmHistory.map((h, i) => {
+                                                        const x = (i / (wpmHistory.length - 1)) * 800;
+                                                        const maxWpm = Math.max(...wpmHistory.map(h => h.wpm), 1);
+                                                        const y = 250 - ((h.wpm / maxWpm) * 200);
+                                                        return `${x},${y}`;
+                                                    }).join(' ') + ` 800,250 0,250`
+                                                }
+                                            />
+                                            {/* Line */}
+                                            <polyline
+                                                fill="none"
+                                                stroke="#22d3ee"
+                                                strokeWidth="3"
+                                                points={wpmHistory.map((h, i) => {
+                                                    const x = (i / (wpmHistory.length - 1)) * 800;
+                                                    const maxWpm = Math.max(...wpmHistory.map(h => h.wpm), 1);
+                                                    const y = 250 - ((h.wpm / maxWpm) * 200);
+                                                    return `${x},${y}`;
+                                                }).join(' ')}
+                                            />
+                                            {/* Points */}
+                                            {wpmHistory.map((h, i) => {
+                                                const x = (i / (wpmHistory.length - 1)) * 800;
+                                                const maxWpm = Math.max(...wpmHistory.map(h => h.wpm), 1);
+                                                const y = 250 - ((h.wpm / maxWpm) * 200);
+                                                return (
+                                                    <circle
+                                                        key={i}
+                                                        cx={x}
+                                                        cy={y}
+                                                        r="4"
+                                                        fill="#facc15"
+                                                    />
+                                                );
+                                            })}
+                                        </>
+                                    )}
+                                </svg>
+                            </div>
+
+                            {/* Detailed Stats */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                <div className="stat-card rounded-lg p-6 text-center">
+                                    <div className="text-3xl font-bold text-[#facc15] mb-2">{rawWPM}</div>
+                                    <div className="text-xs text-[#4b5563]">Raw WPM</div>
+                                </div>
+                                <div className="stat-card rounded-lg p-6 text-center">
+                                    <div className="text-3xl font-bold text-[#22d3ee] mb-2">{stats.correctWords}</div>
+                                    <div className="text-xs text-[#4b5563]">Correct Words</div>
+                                </div>
+                                <div className="stat-card rounded-lg p-6 text-center">
+                                    <div className="text-3xl font-bold text-[#ef4444] mb-2">{stats.incorrectWords}</div>
+                                    <div className="text-xs text-[#4b5563]">Wrong Words</div>
+                                </div>
+                                <div className="stat-card rounded-lg p-6 text-center">
+                                    <div className="text-3xl font-bold text-[#f8fafc] mb-2">{consistency}%</div>
+                                    <div className="text-xs text-[#4b5563]">Consistency</div>
+                                </div>
+                            </div>
+
+                            {/* Character Stats */}
+                            <div className="grid grid-cols-3 gap-4 mb-8">
+                                <div className="stat-card rounded-lg p-4 text-center">
+                                    <div className="text-2xl font-bold text-[#22d3ee] mb-1">{stats.correct}</div>
+                                    <div className="text-xs text-[#4b5563]">Correct Chars</div>
+                                </div>
+                                <div className="stat-card rounded-lg p-4 text-center">
+                                    <div className="text-2xl font-bold text-[#ef4444] mb-1">{stats.incorrect}</div>
+                                    <div className="text-xs text-[#4b5563]">Wrong Chars</div>
+                                </div>
+                                <div className="stat-card rounded-lg p-4 text-center">
+                                    <div className="text-2xl font-bold text-[#facc15] mb-1">{stats.extra}</div>
+                                    <div className="text-xs text-[#4b5563]">Extra Chars</div>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex gap-4 justify-center">
+                                <button
+                                    onClick={restart}
+                                    className="px-8 py-4 bg-[#facc15] text-[#050505] rounded-lg font-bold hover:bg-[#22d3ee] transition-all duration-300 text-lg"
+                                    style={{boxShadow: '0 0 20px rgba(250, 204, 21, 0.5)'}}
+                                >
+                                    Try Again
+                                </button>
+                            </div>
+
+                            <div className="mt-8 text-center text-sm text-[#4b5563]">
+                                Press <span className="text-[#facc15]">Tab + Enter</span> to restart
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Get visible words (4 lines at a time)
+            const visibleWords = content.slice(
+                Math.max(0, currentWordIndex - 30),
+                currentWordIndex + 30
+            );
+            const visibleStartIndex = Math.max(0, currentWordIndex - 30);
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* HUD Header */}
+                    <div className="p-6 flex items-center justify-between">
+                        <div className="logo-font text-2xl text-[#facc15] neon-glow-yellow">
+                            SPEEDTYPE
+                        </div>
+
+                        {params.test && (
+                            <div className="glass-panel px-6 py-3 flex items-center gap-6">
+                                <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-[#4b5563]">Mode:</span>
+                                    <span className="text-[#22d3ee]">
+                                        {params.mode === 'time' ? `${timeLeft}s` : `${params.words} words`}
+                                    </span>
+                                </div>
+                                {params.punctuation && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <span className="text-[#4b5563]">Punctuation:</span>
+                                        <span className="text-[#facc15]">ON</span>
+                                    </div>
+                                )}
+                                <button
+                                    onClick={() => setSoundEnabled(!soundEnabled)}
+                                    className="flex items-center gap-2 text-sm hover:text-[#facc15] transition-colors"
+                                >
+                                    <span className="text-[#4b5563]">Sound:</span>
+                                    <span className={soundEnabled ? 'text-[#facc15]' : 'text-[#ef4444]'}>
+                                        {soundEnabled ? 'ON' : 'OFF'}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="glass-panel px-4 py-2 text-sm">
+                            <span className="text-[#4b5563]">by</span>
+                            <span className="text-[#facc15] ml-2">eber_johns</span>
+                        </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    {started && (
+                        <div className="w-full h-1 bg-[#0d0d0d]">
+                            <div 
+                                className="progress-bar h-full transition-all duration-300"
+                                style={{width: `${progressPercent}%`}}
+                            />
+                        </div>
+                    )}
+
+                    {/* Main Arena */}
+                    <div className="flex-1 flex flex-col items-center justify-center px-4 pb-20">
+                        {/* Gist Badge */}
+                        {gistName && (
+                            <div className="gist-badge px-4 py-2 rounded-full mb-4 flex items-center gap-2 float-anim">
+                                <svg className="w-4 h-4 text-[#facc15]" fill="currentColor" viewBox="0 0 16 16">
+                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                                </svg>
+                                <span className="text-xs text-[#facc15]">{gistName}</span>
+                            </div>
+                        )}
+
+                        {/* Ghost Runner Controls */}
+                        {!params.test && (
+                            <div className="glass-panel px-6 py-3 mb-4 flex items-center gap-6">
+                                <button
+                                    onClick={() => setGhostEnabled(!ghostEnabled)}
+                                    className="flex items-center gap-2 text-sm"
+                                >
+                                    <span className="text-[#4b5563]">Ghost Runner:</span>
+                                    <span className={ghostEnabled ? 'text-[#facc15]' : 'text-[#ef4444]'}>
+                                        {ghostEnabled ? 'ON' : 'OFF'}
+                                    </span>
+                                </button>
+                                {ghostEnabled && (
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[#4b5563] text-sm">Speed: {ghostSpeed} WPM</span>
+                                        <input
+                                            type="range"
+                                            min="20"
+                                            max="150"
+                                            value={ghostSpeed}
+                                            onChange={(e) => setGhostSpeed(parseInt(e.target.value))}
+                                            className="slider w-32"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Live Stats */}
+                        <div className="max-w-4xl w-full mb-6">
+                            <div className="flex items-center justify-center gap-8 mb-4">
+                                {started ? (
+                                    <>
+                                        <div className="text-lg">
+                                            <span className="text-[#facc15] text-3xl font-bold neon-glow-yellow">{calculateWPM()}</span>
+                                            <span className="text-[#4b5563] ml-2">wpm</span>
+                                        </div>
+                                        <div className="w-px h-8 bg-[#4b5563]"></div>
+                                        <div className="text-lg">
+                                            <span className="text-[#22d3ee] text-3xl font-bold neon-glow-cyan">{calculateAccuracy()}%</span>
+                                            <span className="text-[#4b5563] ml-2">acc</span>
+                                        </div>
+                                        {combo >= 10 && (
+                                            <>
+                                                <div className="w-px h-8 bg-[#4b5563]"></div>
+                                                <div className="text-lg">
+                                                    <span className="text-[#facc15] text-2xl font-bold">🔥 {combo}</span>
+                                                    <span className="text-[#4b5563] ml-2">combo</span>
+                                                </div>
+                                            </>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="text-lg text-[#4b5563]">
+                                        Click or start typing to begin
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Word Container */}
+                        <div
+                            ref={containerRef}
+                            onClick={handleFocus}
+                            className={`word-container text-3xl leading-relaxed max-w-[1000px] w-full transition-all duration-300 ${
+                                !focused && !started ? 'word-blur' : ''
+                            } ${showPulse ? 'pulse-bg' : ''} cursor-text p-8 rounded-lg`}
+                            style={{ lineHeight: '1.6' }}
+                        >
+                            {visibleWords.map((word, idx) => {
+                                const wordIdx = visibleStartIndex + idx;
+                                const isCurrentWord = wordIdx === currentWordIndex;
+                                const isTyped = wordIdx < currentWordIndex;
+                                const isGhostWord = wordIdx === ghostWordIndex;
+                                
+                                return (
+                                    <span 
+                                        key={wordIdx} 
+                                        ref={el => wordRefs.current[wordIdx] = el}
+                                        className="inline-block mr-4 mb-3 relative"
+                                    >
+                                        {isGhostWord && ghostEnabled && (
+                                            <span className="absolute -left-2 top-0 w-1 h-full bg-[#facc15] ghost-caret"></span>
+                                        )}
+                                        {word.split('').map((char, charIdx) => {
+                                            let className = 'char-untyped';
+                                            
+                                            if (isTyped) {
+                                                const typedWord = typedWords[wordIdx];
+                                                if (typedWord && typedWord.chars[charIdx]) {
+                                                    const typedChar = typedWord.chars[charIdx];
+                                                    if (typedChar.extra) {
+                                                        className = 'char-extra';
+                                                    } else if (typedChar.correct) {
+                                                        className = 'char-correct';
+                                                    } else {
+                                                        className = 'char-incorrect';
+                                                    }
+                                                } else {
+                                                    className = 'char-incorrect'; // Missed character
+                                                }
+                                            } else if (isCurrentWord && charIdx < input.length) {
+                                                const typedChar = input[charIdx];
+                                                if (typedChar === char) {
+                                                    className = 'char-correct';
+                                                } else {
+                                                    className = 'char-incorrect';
+                                                }
+                                            }
+
+                                            const showCaret = isCurrentWord && charIdx === input.length && focused;
+
+                                            return (
+                                                <span key={charIdx} className="relative">
+                                                    {showCaret && (
+                                                        <span className="absolute left-0 top-0 w-1 h-full bg-[#22d3ee] caret"></span>
+                                                    )}
+                                                    <span className={className}>{char}</span>
+                                                </span>
+                                            );
+                                        })}
+                                        {isCurrentWord && input.length > word.length &&
+                                            input.slice(word.length).split('').map((char, idx) => (
+                                                <span key={`extra-${idx}`} className="char-extra">{char}</span>
+                                            ))
+                                        }
+                                        {isTyped && typedWords[wordIdx] && typedWords[wordIdx].chars.filter(c => c.extra).length > 0 &&
+                                            typedWords[wordIdx].chars.filter(c => c.extra).map((c, idx) => (
+                                                <span key={`extra-${idx}`} className="char-extra">{c.char}</span>
+                                            ))
+                                        }
+                                    </span>
+                                );
+                            })}
+                        </div>
+
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={input}
+                            onChange={handleInput}
+                            onKeyDown={handleKeyDown}
+                            onFocus={() => setFocused(true)}
+                            onBlur={() => setFocused(false)}
+                            className="absolute opacity-0 pointer-events-none"
+                            autoComplete="off"
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                        />
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-6 text-center text-sm text-[#4b5563]">
+                        <span className="text-[#facc15]">tab + enter</span> - restart test
+                        {ghostEnabled && (
+                            <>
+                                <span className="mx-4">|</span>
+                                <span className="text-[#22d3ee]">Ghost Runner</span> pacing at {ghostSpeed} WPM
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Global keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                window.tabPressed = true;
+                setTimeout(() => window.tabPressed = false, 1000);
+            }
+            if (e.key === 'Enter' && window.tabPressed) {
+                window.location.reload();
+            }
+        });
+
+        ReactDOM.render(<TypingTest />, document.getElementById('root'));
+    </script>
+</body>
+</html>
