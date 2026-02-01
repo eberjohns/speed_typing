@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SpeedType - Cyberpunk Typing Arena</title>
+    <title>SpeedType</title>
+    <link rel="icon" type="image/png" href="./favicon.png">
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -122,9 +123,12 @@
             animation: float 3s ease-in-out infinite;
         }
         .word-container {
-            max-height: 160px;
+            max-height: 180px;
             overflow: hidden;
             position: relative;
+        }
+        .words-wrapper {
+            transition: transform 200ms ease-out;
         }
         .slider {
             -webkit-appearance: none;
@@ -245,25 +249,6 @@
             return result;
         }
 
-        // Keyboard click sound generator
-        const createClickSound = () => {
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = 800;
-            oscillator.type = 'sine';
-            
-            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.05);
-        };
-
         function TypingTest() {
             const [params, setParams] = useState({});
             const [content, setContent] = useState([]);
@@ -278,7 +263,6 @@
             const [timeLeft, setTimeLeft] = useState(null);
             const [wpmHistory, setWpmHistory] = useState([]);
             const [combo, setCombo] = useState(0);
-            const [soundEnabled, setSoundEnabled] = useState(false);
             const [showPulse, setShowPulse] = useState(false);
             const [ghostEnabled, setGhostEnabled] = useState(true);
             const [ghostSpeed, setGhostSpeed] = useState(80);
@@ -292,7 +276,7 @@
             
             const inputRef = useRef(null);
             const containerRef = useRef(null);
-            const wordRefs = useRef([]);
+            const wordsWrapperRef = useRef(null);
 
             // Parse URL params
             useEffect(() => {
@@ -326,6 +310,11 @@
                 setPunctuationEnabled(p.punctuation);
                 setParams(p);
                 setTimeLeft(p.time);
+                
+                // Disable ghost runner if test mode
+                if (isTest) {
+                    setGhostEnabled(false);
+                }
             }, []);
 
             // Load content
@@ -439,10 +428,6 @@
                     return;
                 }
 
-                if (soundEnabled && e.key.length === 1) {
-                    createClickSound();
-                }
-
                 if (!started && e.key.length === 1) {
                     setStarted(true);
                     setStartTime(Date.now());
@@ -452,6 +437,15 @@
                     e.preventDefault();
                     setInput('');
                     return;
+                }
+                
+                // Handle backspace to go back to previous word
+                if (e.key === 'Backspace' && input.length === 0 && currentWordIndex > 0) {
+                    e.preventDefault();
+                    setCurrentWordIndex(prev => prev - 1);
+                    const lastTypedWord = typedWords[typedWords.length - 1];
+                    setInput(lastTypedWord ? lastTypedWord.word : '');
+                    setTypedWords(prev => prev.slice(0, -1));
                 }
             };
 
@@ -530,6 +524,49 @@
                 setShowPulse(false);
             };
 
+            const nextTest = () => {
+                // Generate new random seed
+                const newSeed = Math.random().toString(36).substring(2, 15);
+                const newParams = {
+                    ...params,
+                    seed: newSeed
+                };
+                setParams(newParams);
+                
+                // Reset everything
+                setStarted(false);
+                setFinished(false);
+                setFocused(false);
+                setCurrentWordIndex(0);
+                setInput('');
+                setTypedWords([]);
+                setStartTime(null);
+                setTimeLeft(params.time || timeValue);
+                setWpmHistory([]);
+                setCombo(0);
+                setShowPulse(false);
+                
+                // Reload content with new seed
+                setTimeout(() => {
+                    const seedNum = parseInt(newSeed) || newSeed.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+                    let words = seededShuffle(ENGLISH_200, seedNum);
+                    
+                    const targetCount = 500;
+                    const cycledWords = [];
+                    while (cycledWords.length < targetCount) {
+                        cycledWords.push(...words);
+                    }
+                    
+                    if (params.punctuation || punctuationEnabled) {
+                        words = addPunctuation(cycledWords.slice(0, targetCount), seedNum + 1);
+                    } else {
+                        words = cycledWords.slice(0, targetCount);
+                    }
+                    
+                    setContent(words);
+                }, 100);
+            };
+
             const handleFocus = () => {
                 setFocused(true);
                 inputRef.current?.focus();
@@ -603,18 +640,20 @@
                 return { correct, incorrect, extra, correctWords, incorrectWords };
             }, [typedWords]);
 
-            // Scroll to keep current word visible
+            // Smooth scrolling based on current word
             useEffect(() => {
-                if (currentWordIndex > 0 && wordRefs.current[currentWordIndex]) {
-                    const wordElement = wordRefs.current[currentWordIndex];
-                    const container = containerRef.current;
-                    if (wordElement && container) {
-                        const wordTop = wordElement.offsetTop;
-                        const containerHeight = container.clientHeight;
-                        if (wordTop > containerHeight / 2) {
-                            container.scrollTop = wordTop - containerHeight / 2;
-                        }
-                    }
+                if (!wordsWrapperRef.current || !containerRef.current) return;
+                
+                // Calculate which line the current word is on (approximately 8-10 words per line)
+                const wordsPerLine = 8;
+                const currentLine = Math.floor(currentWordIndex / wordsPerLine);
+                const linesToShow = 3; // Show 3 lines at a time
+                
+                // If we're past the first line, start scrolling
+                if (currentLine > 0) {
+                    const lineHeight = 60; // Approximate line height in pixels
+                    const scrollAmount = (currentLine - 0.5) * lineHeight;
+                    wordsWrapperRef.current.style.transform = `translateY(-${scrollAmount}px)`;
                 }
             }, [currentWordIndex]);
 
@@ -884,30 +923,34 @@
                             </div>
 
                             {/* Actions */}
-                            <div className="flex gap-4 justify-center">
-                                <button
-                                    onClick={restart}
-                                    className="px-8 py-4 bg-[#facc15] text-[#050505] rounded-lg font-bold hover:bg-[#22d3ee] transition-all duration-300 text-lg"
-                                    style={{boxShadow: '0 0 20px rgba(250, 204, 21, 0.5)'}}
-                                >
-                                    Try Again
-                                </button>
-                            </div>
+                            {!params.test && (
+                                <div className="flex gap-4 justify-center">
+                                    <button
+                                        onClick={restart}
+                                        className="px-8 py-4 bg-[#facc15] text-[#050505] rounded-lg font-bold hover:bg-[#22d3ee] transition-all duration-300 text-lg"
+                                        style={{boxShadow: '0 0 20px rgba(250, 204, 21, 0.5)'}}
+                                    >
+                                        Try Again
+                                    </button>
+                                    <button
+                                        onClick={nextTest}
+                                        className="px-8 py-4 bg-[#22d3ee] text-[#050505] rounded-lg font-bold hover:bg-[#facc15] transition-all duration-300 text-lg"
+                                        style={{boxShadow: '0 0 20px rgba(34, 211, 238, 0.5)'}}
+                                    >
+                                        Next Test
+                                    </button>
+                                </div>
+                            )}
 
-                            <div className="mt-8 text-center text-sm text-[#4b5563]">
-                                Press <span className="text-[#facc15]">Tab + Enter</span> to restart
-                            </div>
+                            {!params.test && (
+                                <div className="mt-8 text-center text-sm text-[#4b5563]">
+                                    Press <span className="text-[#facc15]">Tab + Enter</span> to restart
+                                </div>
+                            )}
                         </div>
                     </div>
                 );
             }
-
-            // Get visible words (4 lines at a time)
-            const visibleWords = content.slice(
-                Math.max(0, currentWordIndex - 30),
-                currentWordIndex + 30
-            );
-            const visibleStartIndex = Math.max(0, currentWordIndex - 30);
 
             return (
                 <div className="min-h-screen flex flex-col">
@@ -931,15 +974,6 @@
                                         <span className="text-[#facc15]">ON</span>
                                     </div>
                                 )}
-                                <button
-                                    onClick={() => setSoundEnabled(!soundEnabled)}
-                                    className="flex items-center gap-2 text-sm hover:text-[#facc15] transition-colors"
-                                >
-                                    <span className="text-[#4b5563]">Sound:</span>
-                                    <span className={soundEnabled ? 'text-[#facc15]' : 'text-[#ef4444]'}>
-                                        {soundEnabled ? 'ON' : 'OFF'}
-                                    </span>
-                                </button>
                             </div>
                         )}
 
@@ -971,7 +1005,7 @@
                             </div>
                         )}
 
-                        {/* Ghost Runner Controls */}
+                        {/* Ghost Runner Controls - Only in practice mode */}
                         {!params.test && (
                             <div className="glass-panel px-6 py-3 mb-4 flex items-center gap-6">
                                 <button
@@ -1031,7 +1065,7 @@
                             </div>
                         </div>
 
-                        {/* Word Container */}
+                        {/* Word Container with Fixed Positioning */}
                         <div
                             ref={containerRef}
                             onClick={handleFocus}
@@ -1040,71 +1074,71 @@
                             } ${showPulse ? 'pulse-bg' : ''} cursor-text p-8 rounded-lg`}
                             style={{ lineHeight: '1.6' }}
                         >
-                            {visibleWords.map((word, idx) => {
-                                const wordIdx = visibleStartIndex + idx;
-                                const isCurrentWord = wordIdx === currentWordIndex;
-                                const isTyped = wordIdx < currentWordIndex;
-                                const isGhostWord = wordIdx === ghostWordIndex;
-                                
-                                return (
-                                    <span 
-                                        key={wordIdx} 
-                                        ref={el => wordRefs.current[wordIdx] = el}
-                                        className="inline-block mr-4 mb-3 relative"
-                                    >
-                                        {isGhostWord && ghostEnabled && (
-                                            <span className="absolute -left-2 top-0 w-1 h-full bg-[#facc15] ghost-caret"></span>
-                                        )}
-                                        {word.split('').map((char, charIdx) => {
-                                            let className = 'char-untyped';
-                                            
-                                            if (isTyped) {
-                                                const typedWord = typedWords[wordIdx];
-                                                if (typedWord && typedWord.chars[charIdx]) {
-                                                    const typedChar = typedWord.chars[charIdx];
-                                                    if (typedChar.extra) {
-                                                        className = 'char-extra';
-                                                    } else if (typedChar.correct) {
+                            <div ref={wordsWrapperRef} className="words-wrapper">
+                                {content.map((word, wordIdx) => {
+                                    const isCurrentWord = wordIdx === currentWordIndex;
+                                    const isTyped = wordIdx < currentWordIndex;
+                                    const isGhostWord = wordIdx === ghostWordIndex;
+                                    
+                                    return (
+                                        <span 
+                                            key={wordIdx} 
+                                            className="inline-block mr-4 mb-3 relative"
+                                        >
+                                            {isGhostWord && ghostEnabled && (
+                                                <span className="absolute -left-2 top-0 w-1 h-full bg-[#facc15] ghost-caret"></span>
+                                            )}
+                                            {word.split('').map((char, charIdx) => {
+                                                let className = 'char-untyped';
+                                                
+                                                if (isTyped) {
+                                                    const typedWord = typedWords[wordIdx];
+                                                    if (typedWord && typedWord.chars[charIdx]) {
+                                                        const typedChar = typedWord.chars[charIdx];
+                                                        if (typedChar.extra) {
+                                                            className = 'char-extra';
+                                                        } else if (typedChar.correct) {
+                                                            className = 'char-correct';
+                                                        } else {
+                                                            className = 'char-incorrect';
+                                                        }
+                                                    } else {
+                                                        className = 'char-incorrect'; // Missed character
+                                                    }
+                                                } else if (isCurrentWord && charIdx < input.length) {
+                                                    const typedChar = input[charIdx];
+                                                    if (typedChar === char) {
                                                         className = 'char-correct';
                                                     } else {
                                                         className = 'char-incorrect';
                                                     }
-                                                } else {
-                                                    className = 'char-incorrect'; // Missed character
                                                 }
-                                            } else if (isCurrentWord && charIdx < input.length) {
-                                                const typedChar = input[charIdx];
-                                                if (typedChar === char) {
-                                                    className = 'char-correct';
-                                                } else {
-                                                    className = 'char-incorrect';
-                                                }
+
+                                                const showCaret = isCurrentWord && charIdx === input.length && focused;
+
+                                                return (
+                                                    <span key={charIdx} className="relative">
+                                                        {showCaret && (
+                                                            <span className="absolute left-0 top-0 w-1 h-full bg-[#22d3ee] caret"></span>
+                                                        )}
+                                                        <span className={className}>{char}</span>
+                                                    </span>
+                                                );
+                                            })}
+                                            {isCurrentWord && input.length > word.length &&
+                                                input.slice(word.length).split('').map((char, idx) => (
+                                                    <span key={`extra-${idx}`} className="char-extra">{char}</span>
+                                                ))
                                             }
-
-                                            const showCaret = isCurrentWord && charIdx === input.length && focused;
-
-                                            return (
-                                                <span key={charIdx} className="relative">
-                                                    {showCaret && (
-                                                        <span className="absolute left-0 top-0 w-1 h-full bg-[#22d3ee] caret"></span>
-                                                    )}
-                                                    <span className={className}>{char}</span>
-                                                </span>
-                                            );
-                                        })}
-                                        {isCurrentWord && input.length > word.length &&
-                                            input.slice(word.length).split('').map((char, idx) => (
-                                                <span key={`extra-${idx}`} className="char-extra">{char}</span>
-                                            ))
-                                        }
-                                        {isTyped && typedWords[wordIdx] && typedWords[wordIdx].chars.filter(c => c.extra).length > 0 &&
-                                            typedWords[wordIdx].chars.filter(c => c.extra).map((c, idx) => (
-                                                <span key={`extra-${idx}`} className="char-extra">{c.char}</span>
-                                            ))
-                                        }
-                                    </span>
-                                );
-                            })}
+                                            {isTyped && typedWords[wordIdx] && typedWords[wordIdx].chars.filter(c => c.extra).length > 0 &&
+                                                typedWords[wordIdx].chars.filter(c => c.extra).map((c, idx) => (
+                                                    <span key={`extra-${idx}`} className="char-extra">{c.char}</span>
+                                                ))
+                                            }
+                                        </span>
+                                    );
+                                })}
+                            </div>
                         </div>
 
                         <input
@@ -1124,11 +1158,15 @@
 
                     {/* Footer */}
                     <div className="p-6 text-center text-sm text-[#4b5563]">
-                        <span className="text-[#facc15]">tab + enter</span> - restart test
-                        {ghostEnabled && (
+                        {!params.test && (
                             <>
-                                <span className="mx-4">|</span>
-                                <span className="text-[#22d3ee]">Ghost Runner</span> pacing at {ghostSpeed} WPM
+                                <span className="text-[#facc15]">tab + enter</span> - restart test
+                                {ghostEnabled && (
+                                    <>
+                                        <span className="mx-4">|</span>
+                                        <span className="text-[#22d3ee]">Ghost Runner</span> pacing at {ghostSpeed} WPM
+                                    </>
+                                )}
                             </>
                         )}
                     </div>
