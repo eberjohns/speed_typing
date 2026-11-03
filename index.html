@@ -78,14 +78,6 @@
             opacity: 0.5;
             transition: all 300ms ease-in-out;
         }
-        .pulse-bg {
-            animation: pulse-glow 0.5s ease-out;
-        }
-        @keyframes pulse-glow {
-            0% { box-shadow: 0 0 0px rgba(34, 211, 238, 0); }
-            50% { box-shadow: 0 0 60px rgba(34, 211, 238, 0.4); }
-            100% { box-shadow: 0 0 0px rgba(34, 211, 238, 0); }
-        }
         .gist-badge {
             background: linear-gradient(135deg, rgba(250, 204, 21, 0.1), rgba(34, 211, 238, 0.1));
             border: 1px solid rgba(250, 204, 21, 0.3);
@@ -123,12 +115,12 @@
             animation: float 3s ease-in-out infinite;
         }
         .word-container {
-            max-height: 180px;
+            height: 240px;
             overflow: hidden;
             position: relative;
         }
         .words-wrapper {
-            transition: transform 200ms ease-out;
+            transition: transform 300ms ease-out;
         }
         .slider {
             -webkit-appearance: none;
@@ -154,6 +146,11 @@
             border-radius: 50%;
             cursor: pointer;
             border: none;
+        }
+        .typing-word {
+            display: inline-block;
+            margin-right: 1rem;
+            margin-bottom: 0.75rem;
         }
     </style>
 </head>
@@ -263,7 +260,6 @@
             const [timeLeft, setTimeLeft] = useState(null);
             const [wpmHistory, setWpmHistory] = useState([]);
             const [combo, setCombo] = useState(0);
-            const [showPulse, setShowPulse] = useState(false);
             const [ghostEnabled, setGhostEnabled] = useState(true);
             const [ghostSpeed, setGhostSpeed] = useState(80);
             
@@ -277,6 +273,7 @@
             const inputRef = useRef(null);
             const containerRef = useRef(null);
             const wordsWrapperRef = useRef(null);
+            const wordRefs = useRef([]);
 
             // Parse URL params
             useEffect(() => {
@@ -488,10 +485,6 @@
                     if (isCorrect) {
                         const newCombo = combo + 1;
                         setCombo(newCombo);
-                        if (newCombo % 10 === 0) {
-                            setShowPulse(true);
-                            setTimeout(() => setShowPulse(false), 500);
-                        }
                     } else {
                         setCombo(0);
                     }
@@ -521,7 +514,6 @@
                 setTimeLeft(params.time || timeValue);
                 setWpmHistory([]);
                 setCombo(0);
-                setShowPulse(false);
             };
 
             const nextTest = () => {
@@ -544,7 +536,6 @@
                 setTimeLeft(params.time || timeValue);
                 setWpmHistory([]);
                 setCombo(0);
-                setShowPulse(false);
                 
                 // Reload content with new seed
                 setTimeout(() => {
@@ -640,20 +631,24 @@
                 return { correct, incorrect, extra, correctWords, incorrectWords };
             }, [typedWords]);
 
-            // Smooth scrolling based on current word
+            // Adaptive scrolling - keep cursor on second line
             useEffect(() => {
-                if (!wordsWrapperRef.current || !containerRef.current) return;
+                if (!wordsWrapperRef.current || !containerRef.current || !wordRefs.current[currentWordIndex]) return;
                 
-                // Calculate which line the current word is on (approximately 8-10 words per line)
-                const wordsPerLine = 8;
-                const currentLine = Math.floor(currentWordIndex / wordsPerLine);
-                const linesToShow = 3; // Show 3 lines at a time
+                const currentWordElement = wordRefs.current[currentWordIndex];
+                const containerTop = containerRef.current.getBoundingClientRect().top;
+                const wordTop = currentWordElement.getBoundingClientRect().top;
+                const relativeTop = wordTop - containerTop;
                 
-                // If we're past the first line, start scrolling
-                if (currentLine > 0) {
-                    const lineHeight = 60; // Approximate line height in pixels
-                    const scrollAmount = (currentLine - 0.5) * lineHeight;
-                    wordsWrapperRef.current.style.transform = `translateY(-${scrollAmount}px)`;
+                // Second line starts at approximately 60px (one line height)
+                const targetPosition = 60;
+                
+                // If current word is beyond second line, scroll up
+                if (relativeTop > targetPosition + 10) {
+                    const scrollAmount = relativeTop - targetPosition;
+                    const currentTransform = wordsWrapperRef.current.style.transform;
+                    const currentOffset = currentTransform ? parseInt(currentTransform.match(/-?\d+/)?.[0] || 0) : 0;
+                    wordsWrapperRef.current.style.transform = `translateY(-${currentOffset + scrollAmount}px)`;
                 }
             }, [currentWordIndex]);
 
@@ -922,25 +917,23 @@
                                 </div>
                             </div>
 
-                            {/* Actions */}
-                            {!params.test && (
-                                <div className="flex gap-4 justify-center">
-                                    <button
-                                        onClick={restart}
-                                        className="px-8 py-4 bg-[#facc15] text-[#050505] rounded-lg font-bold hover:bg-[#22d3ee] transition-all duration-300 text-lg"
-                                        style={{boxShadow: '0 0 20px rgba(250, 204, 21, 0.5)'}}
-                                    >
-                                        Try Again
-                                    </button>
-                                    <button
-                                        onClick={nextTest}
-                                        className="px-8 py-4 bg-[#22d3ee] text-[#050505] rounded-lg font-bold hover:bg-[#facc15] transition-all duration-300 text-lg"
-                                        style={{boxShadow: '0 0 20px rgba(34, 211, 238, 0.5)'}}
-                                    >
-                                        Next Test
-                                    </button>
-                                </div>
-                            )}
+                            {/* Actions - Always show buttons */}
+                            <div className="flex gap-4 justify-center">
+                                <button
+                                    onClick={restart}
+                                    className="px-8 py-4 bg-[#facc15] text-[#050505] rounded-lg font-bold hover:bg-[#22d3ee] transition-all duration-300 text-lg"
+                                    style={{boxShadow: '0 0 20px rgba(250, 204, 21, 0.5)'}}
+                                >
+                                    Try Again
+                                </button>
+                                <button
+                                    onClick={nextTest}
+                                    className="px-8 py-4 bg-[#22d3ee] text-[#050505] rounded-lg font-bold hover:bg-[#facc15] transition-all duration-300 text-lg"
+                                    style={{boxShadow: '0 0 20px rgba(34, 211, 238, 0.5)'}}
+                                >
+                                    Next Test
+                                </button>
+                            </div>
 
                             {!params.test && (
                                 <div className="mt-8 text-center text-sm text-[#4b5563]">
@@ -1005,12 +998,12 @@
                             </div>
                         )}
 
-                        {/* Ghost Runner Controls - Only in practice mode */}
+                        {/* Ghost Runner Controls - Visible in practice mode */}
                         {!params.test && (
                             <div className="glass-panel px-6 py-3 mb-4 flex items-center gap-6">
                                 <button
                                     onClick={() => setGhostEnabled(!ghostEnabled)}
-                                    className="flex items-center gap-2 text-sm"
+                                    className="flex items-center gap-2 text-sm hover:text-[#facc15] transition-colors"
                                 >
                                     <span className="text-[#4b5563]">Ghost Runner:</span>
                                     <span className={ghostEnabled ? 'text-[#facc15]' : 'text-[#ef4444]'}>
@@ -1065,13 +1058,13 @@
                             </div>
                         </div>
 
-                        {/* Word Container with Fixed Positioning */}
+                        {/* Word Container with Adaptive Scrolling */}
                         <div
                             ref={containerRef}
                             onClick={handleFocus}
                             className={`word-container text-3xl leading-relaxed max-w-[1000px] w-full transition-all duration-300 ${
                                 !focused && !started ? 'word-blur' : ''
-                            } ${showPulse ? 'pulse-bg' : ''} cursor-text p-8 rounded-lg`}
+                            } cursor-text p-8 rounded-lg`}
                             style={{ lineHeight: '1.6' }}
                         >
                             <div ref={wordsWrapperRef} className="words-wrapper">
@@ -1082,8 +1075,9 @@
                                     
                                     return (
                                         <span 
-                                            key={wordIdx} 
-                                            className="inline-block mr-4 mb-3 relative"
+                                            key={wordIdx}
+                                            ref={el => wordRefs.current[wordIdx] = el}
+                                            className="typing-word relative"
                                         >
                                             {isGhostWord && ghostEnabled && (
                                                 <span className="absolute -left-2 top-0 w-1 h-full bg-[#facc15] ghost-caret"></span>
@@ -1103,7 +1097,7 @@
                                                             className = 'char-incorrect';
                                                         }
                                                     } else {
-                                                        className = 'char-incorrect'; // Missed character
+                                                        className = 'char-incorrect';
                                                     }
                                                 } else if (isCurrentWord && charIdx < input.length) {
                                                     const typedChar = input[charIdx];
